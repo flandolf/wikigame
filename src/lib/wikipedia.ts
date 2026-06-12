@@ -62,6 +62,13 @@ const POOL_TARGET = 10;
 /** localStorage keys */
 const STORAGE_USED_KEY = 'wikigame_used_articles';
 const STORAGE_POOL_KEY = 'wikigame_candidate_pool';
+const STORAGE_COMMON_KEY = 'wikigame_common_pool';
+
+/** How long to keep the most-linked article cache (7 days). */
+const COMMON_CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
+
+/** Minimum incoming links for a page to be considered "common." */
+const MIN_INCOMING_LINKS = 500;
 
 // Types
 
@@ -160,6 +167,118 @@ function addToPool(pages: RandomPage[]): void {
     .map((p) => ({ page: p, expiresAt: now + 3_600_000 })); // 1 hour
   const merged = [...pool, ...fresh].slice(-50); // keep latest 50
   savePool(merged);
+}
+
+// ======================== Common article pool ========================
+
+interface CommonPoolPage {
+  title: string;
+  id: number;
+  size: number;
+}
+
+interface CommonPoolCache {
+  pages: CommonPoolPage[];
+  cachedAt: number;
+}
+
+function loadCommonPool(): CommonPoolCache | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_COMMON_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as CommonPoolCache;
+  } catch {
+    return null;
+  }
+}
+
+function saveCommonPool(pages: CommonPoolPage[]): void {
+  try {
+    const cache: CommonPoolCache = { pages, cachedAt: Date.now() };
+    localStorage.setItem(STORAGE_COMMON_KEY, JSON.stringify(cache));
+  } catch {
+    // silently ignore
+  }
+}
+
+/**
+ * Fetch the top ~500 most-linked Wikipedia articles and filter them by
+ * size, namespace, and disambiguation status. These are the articles with
+ * the most incoming links — naturally the most well-known/common pages.
+ */
+async function fetchMostLinkedPages(): Promise<CommonPoolPage[]> {
+  // Step 1: Get the top 500 most-linked page titles
+  const listData = await apiRequest<WikiQueryResponse>({
+    action: 'query',
+    list: 'querypage',
+    qppage: 'mostlinked',
+    qplimit: '500',
+  });
+
+  type MostLinkedResult = { ns: number; title: string; value: number };
+  const results: MostLinkedResult[] =
+    (listData.query as any)?.querypage?.results ?? [];
+
+  if (results.length === 0) return [];
+
+  // Filter to main namespace (ns=0) and reasonably linked
+  const titles = results
+    .filter((r) => r.ns === 0 && r.value >= MIN_INCOMING_LINKS)
+    .map((r) => r.title);
+
+  if (titles.length === 0) return [];
+
+  // Step 2: Get page IDs, sizes, and disambiguation status in one batch
+  // Split into chunks of 50 to avoid URI too long errors
+  const candidates: CommonPoolPage[] = [];
+
+  for (let i = 0; i < titles.length; i += 50) {
+    const chunk = titles.slice(i, i + 50);
+    const infoData = await apiRequest<WikiQueryResponse>({
+      action: 'query',
+      titles: chunk.join('|'),
+      prop: 'info|pageprops',
+      inprop: 'size',
+      ppprop: 'disambiguation',
+    });
+
+    const pages = infoData.query?.pages ?? {};
+    for (const pageId in pages) {
+      const page = pages[pageId];
+      if (!page.title || (page.ns ?? -1) !== 0) continue;
+      if ((page.length ?? 0) < MIN_ARTICLE_SIZE) continue;
+      if (page.pageprops?.disambiguation !== undefined) continue;
+
+      candidates.push({
+        title: page.title,
+        id: page.pageid ?? page.id ?? 0,
+        size: page.length ?? 0,
+      });
+    }
+  }
+
+  return candidates;
+}
+
+/**
+ * Returns the cached common pool if valid and fresh, or fetches a new one.
+ */
+async function getOrRefreshCommonPool(): Promise<CommonPoolPage[]> {
+  const cached = loadCommonPool();
+  if (cached && Date.now() - cached.cachedAt < COMMON_CACHE_TTL) {
+    return cached.pages;
+  }
+
+  try {
+    const pages = await fetchMostLinkedPages();
+    if (pages.length > 0) {
+      saveCommonPool(pages);
+    }
+    return pages;
+  } catch {
+    // If fetch fails, return stale cache if available
+    return cached?.pages ?? [];
+  }
 }
 
 // Batch fetching
@@ -274,15 +393,41 @@ export async function getRandomArticles(count: number = 2): Promise<RandomPage[]
 }
 
 /**
- * Keep fetching & verifying random pages until we have enough candidates.
+ * Keep fetching & verifying pages until we have enough candidates.
+ * Draws from a cached pool of most-linked (common) articles first,
+ * then falls back to random pages for any remaining slots.
  */
 async function fetchFreshCandidates(
   needed: number,
   usedIds: Set<number>
 ): Promise<PageWithSize[]> {
   const verified: PageWithSize[] = [];
-  let attempts = 0;
 
+  // 1. Try the most-linked common pool first
+  try {
+    const commonPool = await getOrRefreshCommonPool();
+    if (commonPool.length > 0) {
+      // Shuffle to get variety across games
+      const shuffled = [...commonPool].sort(() => Math.random() - 0.5);
+      const candidates: PageWithSize[] = shuffled
+        .filter((p) => !usedIds.has(p.id))
+        .slice(0, needed + 5) // grab extras since some may fail link check
+        .map((p) => ({ title: p.title, id: p.id, size: p.size, links: 0 }));
+
+      if (candidates.length > 0) {
+        const withLinks = await verifyLinkCounts(candidates);
+        for (const page of withLinks) {
+          verified.push(page);
+          if (verified.length >= needed) break;
+        }
+      }
+    }
+  } catch {
+    // Common pool is best-effort — fall through to random
+  }
+
+  // 2. Fall back to random fetching if still not enough
+  let attempts = 0;
   while (verified.length < needed && attempts < MAX_FETCH_ATTEMPTS) {
     attempts++;
     const batch = await fetchRandomBatch(BATCH_SIZE);
@@ -318,6 +463,9 @@ async function topUpPool(usedIds: Set<number>): Promise<void> {
     const needed = POOL_TARGET - existing.length;
     const fresh = await fetchFreshCandidates(needed, usedIds);
     addToPool(fresh.map((p) => ({ title: p.title, id: p.id })));
+
+    // Silently refresh the common pool in the background for future games
+    getOrRefreshCommonPool().catch(() => {});
   } catch {
     // Pooling is best-effort, never block the UI.
   }
