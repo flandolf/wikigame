@@ -13,6 +13,7 @@ export interface GameConfig {
   startTitle: string;
   startHtml: string;
   goalTitle: string;
+  modeId?: string;
 }
 
 export interface OpponentState {

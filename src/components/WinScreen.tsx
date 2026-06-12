@@ -1,3 +1,6 @@
+import ScreenFrame from './ScreenFrame';
+import type { ThemeMode } from './ThemeToggle';
+
 interface PathEntry {
   title: string;
 }
@@ -11,6 +14,8 @@ interface WinScreenProps {
   onPlayAgain: () => void;
   onHome: () => void;
   formatTime: (seconds: number) => string;
+  theme: ThemeMode;
+  onToggleTheme: () => void;
 }
 
 export default function WinScreen({
@@ -22,11 +27,13 @@ export default function WinScreen({
   onPlayAgain,
   onHome,
   formatTime,
+  theme,
+  onToggleTheme,
 }: WinScreenProps) {
   return (
-    <div className="win-overlay">
+    <ScreenFrame className="win-overlay" theme={theme} onToggleTheme={onToggleTheme}>
       <div className="win-card">
-        <div className="win-icon">🎉</div>
+        <p className="lobby-kicker">Route completed</p>
         <h1 className="win-title">You Reached the Goal!</h1>
         <p className="win-path-label">
           {startTitle} → {goalTitle}
@@ -77,6 +84,6 @@ export default function WinScreen({
           </button>
         </div>
       </div>
-    </div>
+    </ScreenFrame>
   );
 }

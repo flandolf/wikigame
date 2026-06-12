@@ -1,3 +1,6 @@
+import ScreenFrame from './ScreenFrame';
+import type { ThemeMode } from './ThemeToggle';
+
 interface PlayerResultData {
   name: string;
   clicks: number;
@@ -14,6 +17,8 @@ interface MultiplayerResultsProps {
   onNewRound: () => void;
   onLeave: () => void;
   formatTime: (s: number) => string;
+  theme: ThemeMode;
+  onToggleTheme: () => void;
 }
 
 export default function MultiplayerResults({
@@ -24,6 +29,8 @@ export default function MultiplayerResults({
   onNewRound,
   onLeave,
   formatTime,
+  theme,
+  onToggleTheme,
 }: MultiplayerResultsProps) {
   const opponent = opponentResult;
   const bothFinished = opponent !== null;
@@ -42,11 +49,9 @@ export default function MultiplayerResults({
     : null;
 
   return (
-    <div className="win-overlay">
+    <ScreenFrame className="win-overlay" theme={theme} onToggleTheme={onToggleTheme}>
       <div className="results-card">
-        <div className="results-icon">
-          {bothFinished ? (iWon ? '🏆' : tie ? '🤝' : '😔') : '⏳'}
-        </div>
+        <p className="lobby-kicker">{bothFinished ? 'Round archived' : 'Opponent still navigating'}</p>
         <h1 className="results-title">
           {bothFinished
             ? iWon
@@ -70,7 +75,7 @@ export default function MultiplayerResults({
             <div className="results-player-header">
               <span className="results-player-name">{myResult.name}</span>
               <span className="results-player-badge">
-                {myResult.won ? (iWon ? '🥇' : '✅') : '❌'}
+                {myResult.won ? (iWon ? 'Winner' : 'Finished') : 'DNF'}
               </span>
             </div>
             <div className="results-player-stats">
@@ -98,7 +103,7 @@ export default function MultiplayerResults({
               <div className="results-player-header">
                 <span className="results-player-name">{opponent.name}</span>
                 <span className="results-player-badge">
-                  {opponent.won ? (!iWon && oppWon ? '🥇' : '✅') : '❌'}
+                  {opponent.won ? (!iWon && oppWon ? 'Winner' : 'Finished') : 'DNF'}
                 </span>
               </div>
               <div className="results-player-stats">
@@ -140,6 +145,6 @@ export default function MultiplayerResults({
           </button>
         </div>
       </div>
-    </div>
+    </ScreenFrame>
   );
 }

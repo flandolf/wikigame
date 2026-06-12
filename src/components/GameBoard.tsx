@@ -1,6 +1,7 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { extractArticleTitleFromHref } from '../lib/wikipedia';
 import type { OpponentState } from '../lib/multiplayer';
+import ThemeToggle, { type ThemeMode } from './ThemeToggle';
 
 interface ArticleInfo {
   title: string;
@@ -14,6 +15,7 @@ interface PathEntry {
 interface GameBoardProps {
   currentArticle: ArticleInfo | null;
   goalTitle: string;
+  modeName: string;
   clicks: number;
   elapsedSeconds: number;
   path: PathEntry[];
@@ -24,11 +26,14 @@ interface GameBoardProps {
   // Multiplayer props
   opponent?: OpponentState | null;
   playerName?: string;
+  theme: ThemeMode;
+  onToggleTheme: () => void;
 }
 
 export default function GameBoard({
   currentArticle,
   goalTitle,
+  modeName,
   clicks,
   elapsedSeconds,
   path,
@@ -38,6 +43,8 @@ export default function GameBoard({
   errorMessage,
   opponent,
   playerName,
+  theme,
+  onToggleTheme,
 }: GameBoardProps) {
   const articleRef = useRef<HTMLDivElement>(null);
   const [showPath, setShowPath] = useState(false);
@@ -80,9 +87,9 @@ export default function GameBoard({
               <span className="opponent-clicks">{opponent.clicks} clicks</span>
             </div>
             {opponent.finished ? (
-              <span className="opponent-status finished">✅ Finished</span>
+              <span className="opponent-status finished">Finished</span>
             ) : (
-              <span className="opponent-status playing">🔍 Playing...</span>
+              <span className="opponent-status playing">Playing...</span>
             )}
           </div>
         </div>
@@ -113,6 +120,10 @@ export default function GameBoard({
               {goalTitle.length > 35 ? goalTitle.slice(0, 32) + '...' : goalTitle}
             </span>
           </div>
+          <div className="header-stat mode-stat">
+            <span className="stat-label">Mode</span>
+            <span className="stat-value">{modeName}</span>
+          </div>
         </div>
         <div className="header-right">
           <div className="current-page-title" title={currentArticle?.title}>
@@ -132,6 +143,7 @@ export default function GameBoard({
             </svg>
             Path
           </button>
+          <ThemeToggle theme={theme} onToggle={onToggleTheme} />
         </div>
       </header>
 

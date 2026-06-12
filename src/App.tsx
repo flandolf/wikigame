@@ -21,6 +21,12 @@ import LobbyScreen from './components/LobbyScreen';
 import WaitingScreen from './components/WaitingScreen';
 import MultiplayerResults from './components/MultiplayerResults';
 import Leaderboard from './components/Leaderboard';
+import type { ThemeMode } from './components/ThemeToggle';
+import {
+  getGameMode,
+  getRandomPresetPair,
+  type GameModeId,
+} from './lib/gameModes';
 import './App.css';
 
 interface ArticleInfo {
@@ -51,11 +57,23 @@ interface MyResultData {
   won: boolean;
 }
 
-async function fetchGamePair(): Promise<{ start: { title: string }; goal: { title: string }; startContent: ArticleInfo }> {
-  const pages = await getRandomArticles(2);
+async function fetchGamePair(modeId: GameModeId): Promise<{ start: { title: string }; goal: { title: string }; startContent: ArticleInfo }> {
+  if (modeId === 'sprint') {
+    const pair = getRandomPresetPair();
+    const startContent = await getArticleContent(pair.start);
+    return {
+      start: { title: startContent.title },
+      goal: { title: pair.goal },
+      startContent,
+    };
+  }
+
+  const pages = await getRandomArticles(modeId === 'expert' ? 4 : 2);
   if (pages.length < 2) throw new Error('Could not find enough random articles');
 
-  let [start, goal] = pages;
+  const start = pages[0];
+  const initialGoal = modeId === 'expert' ? pages[pages.length - 1] : pages[1];
+  let goal = initialGoal;
   if (isSameArticle(start.title, goal.title)) {
     const morePages = await getRandomArticles(1);
     if (morePages.length > 0) goal = morePages[0];
@@ -67,6 +85,15 @@ async function fetchGamePair(): Promise<{ start: { title: string }; goal: { titl
 
 function App() {
   const [screen, setScreen] = useState<Screen>({ type: 'start' });
+  const [selectedMode, setSelectedMode] = useState<GameModeId>(() => {
+    const saved = localStorage.getItem('wikigame_mode');
+    return saved === 'sprint' || saved === 'expert' || saved === 'classic' ? saved : 'classic';
+  });
+  const [theme, setTheme] = useState<ThemeMode>(() => {
+    const saved = localStorage.getItem('wikigame_theme');
+    if (saved === 'light' || saved === 'dark') return saved;
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  });
 
   // Solo game state
   const [startArticle, setStartArticle] = useState<ArticleInfo | null>(null);
@@ -94,12 +121,21 @@ function App() {
   // Guards
   const gameStartedRef = useRef(false);
 
-  // MP manager - stable reference
-  const mpManagerRef = useRef<MultiplayerManager | null>(null);
-  if (!mpManagerRef.current) {
-    mpManagerRef.current = new MultiplayerManager();
-  }
-  const mpManager = mpManagerRef.current;
+  // MP manager - stable instance
+  const [mpManager] = useState(() => new MultiplayerManager());
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem('wikigame_theme', theme);
+  }, [theme]);
+
+  useEffect(() => {
+    localStorage.setItem('wikigame_mode', selectedMode);
+  }, [selectedMode]);
+
+  const toggleTheme = useCallback(() => {
+    setTheme((current) => current === 'dark' ? 'light' : 'dark');
+  }, []);
 
   // Keep goalRef in sync
   useEffect(() => {
@@ -150,7 +186,7 @@ function App() {
     setErrorMessage('');
 
     try {
-      const { goal, startContent } = await fetchGamePair();
+      const { goal, startContent } = await fetchGamePair(selectedMode);
       setStartArticle(startContent);
       setGoalTitle(goal.title);
       goalRef.current = goal.title;
@@ -165,7 +201,7 @@ function App() {
       setErrorMessage(err instanceof Error ? err.message : 'Failed to start game');
       setScreen({ type: 'start' });
     }
-  }, [startTimer]);
+  }, [selectedMode, startTimer]);
 
   const navigateToSolo = useCallback(async (title: string) => {
     if (screen.type !== 'solo_playing' || isNavigating) return;
@@ -229,6 +265,9 @@ function App() {
 
       case 'game_config': {
         const cfg = msg.config;
+        if (cfg.modeId === 'classic' || cfg.modeId === 'sprint' || cfg.modeId === 'expert') {
+          setSelectedMode(cfg.modeId);
+        }
         setGoalTitle(cfg.goalTitle);
         goalRef.current = cfg.goalTitle;
         setCurrentArticle({ title: cfg.startTitle, html: cfg.startHtml });
@@ -259,6 +298,9 @@ function App() {
       case 'new_round': {
         gameStartedRef.current = false;
         const cfg = msg.config;
+        if (cfg.modeId === 'classic' || cfg.modeId === 'sprint' || cfg.modeId === 'expert') {
+          setSelectedMode(cfg.modeId);
+        }
         setGoalTitle(cfg.goalTitle);
         goalRef.current = cfg.goalTitle;
         setStartArticle({ title: cfg.startTitle, html: cfg.startHtml });
@@ -282,7 +324,9 @@ function App() {
     }
   }, [startTimer, mpManager]);
 
-  handleMessageRef.current = handleMessage;
+  useEffect(() => {
+    handleMessageRef.current = handleMessage;
+  }, [handleMessage]);
 
   const handleHost = useCallback(async (name: string) => {
     setPlayerName(name);
@@ -327,11 +371,12 @@ function App() {
     setErrorMessage('');
 
     try {
-      const { goal, startContent } = await fetchGamePair();
+      const { goal, startContent } = await fetchGamePair(selectedMode);
       const config: GameConfig = {
         startTitle: startContent.title,
         startHtml: startContent.html,
         goalTitle: goal.title,
+        modeId: selectedMode,
       };
 
       setStartArticle(startContent);
@@ -348,7 +393,7 @@ function App() {
       setErrorMessage(err instanceof Error ? err.message : 'Failed to generate game');
       gameStartedRef.current = false;
     }
-  }, [mpManager]);
+  }, [mpManager, selectedMode]);
 
   // Trigger game start when host sees opponent connected
   useEffect(() => {
@@ -424,11 +469,12 @@ function App() {
     setErrorMessage('');
 
     try {
-      const { goal, startContent } = await fetchGamePair();
+      const { goal, startContent } = await fetchGamePair(selectedMode);
       const config: GameConfig = {
         startTitle: startContent.title,
         startHtml: startContent.html,
         goalTitle: goal.title,
+        modeId: selectedMode,
       };
 
       setStartArticle(startContent);
@@ -446,7 +492,7 @@ function App() {
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : 'Failed to generate new round');
     }
-  }, [mpManager]);
+  }, [mpManager, selectedMode]);
 
   const leaveMultiplayer = useCallback(() => {
     mpManager.send({ type: 'leave' });
@@ -468,8 +514,12 @@ function App() {
           onStart={startSoloGame}
           onMultiplayer={() => setScreen({ type: 'lobby' })}
           onLeaderboard={() => setScreen({ type: 'leaderboard' })}
+          selectedMode={selectedMode}
+          onSelectMode={setSelectedMode}
           error={errorMessage}
           onDismissError={() => setErrorMessage('')}
+          theme={theme}
+          onToggleTheme={toggleTheme}
         />
       );
 
@@ -492,6 +542,8 @@ function App() {
           onPlayAgain={startSoloGame}
           onHome={() => { resetTimer(); setScreen({ type: 'start' }); }}
           formatTime={formatTime}
+          theme={theme}
+          onToggleTheme={toggleTheme}
         />
       );
 
@@ -502,6 +554,8 @@ function App() {
           onJoin={handleJoin}
           onBack={() => setScreen({ type: 'start' })}
           error={errorMessage}
+          theme={theme}
+          onToggleTheme={toggleTheme}
         />
       );
 
@@ -514,6 +568,8 @@ function App() {
           opponentName={opponent?.name}
           status={mpStatus}
           onCancel={cancelWaiting}
+          theme={theme}
+          onToggleTheme={toggleTheme}
         />
       );
 
@@ -527,6 +583,8 @@ function App() {
           onNewRound={newMultiplayerRound}
           onLeave={leaveMultiplayer}
           formatTime={formatTime}
+          theme={theme}
+          onToggleTheme={toggleTheme}
         />
       );
 
@@ -534,6 +592,8 @@ function App() {
       return (
         <Leaderboard
           onBack={() => setScreen({ type: 'start' })}
+          theme={theme}
+          onToggleTheme={toggleTheme}
         />
       );
 
@@ -542,6 +602,7 @@ function App() {
         <GameBoard
           currentArticle={currentArticle}
           goalTitle={goalTitle}
+          modeName={getGameMode(selectedMode).name}
           clicks={clicks}
           elapsedSeconds={elapsedSeconds}
           path={path}
@@ -549,6 +610,8 @@ function App() {
           onLinkClick={handleSoloClick}
           isNavigating={isNavigating}
           errorMessage={errorMessage}
+          theme={theme}
+          onToggleTheme={toggleTheme}
         />
       );
 
@@ -557,6 +620,7 @@ function App() {
         <GameBoard
           currentArticle={currentArticle}
           goalTitle={goalTitle}
+          modeName={getGameMode(selectedMode).name}
           clicks={clicks}
           elapsedSeconds={elapsedSeconds}
           path={path}
@@ -572,6 +636,8 @@ function App() {
           errorMessage={errorMessage}
           opponent={opponent}
           playerName={playerName}
+          theme={theme}
+          onToggleTheme={toggleTheme}
         />
       );
 

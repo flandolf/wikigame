@@ -1,13 +1,17 @@
 import { useState } from 'react';
+import ScreenFrame from './ScreenFrame';
+import type { ThemeMode } from './ThemeToggle';
 
 interface LobbyScreenProps {
   onHost: (name: string) => void;
   onJoin: (name: string, code: string) => void;
   onBack: () => void;
   error: string;
+  theme: ThemeMode;
+  onToggleTheme: () => void;
 }
 
-export default function LobbyScreen({ onHost, onJoin, onBack, error }: LobbyScreenProps) {
+export default function LobbyScreen({ onHost, onJoin, onBack, error, theme, onToggleTheme }: LobbyScreenProps) {
   const [mode, setMode] = useState<'select' | 'host' | 'join'>('select');
   const [name, setName] = useState(() => localStorage.getItem('wikigame_name') || '');
   const [code, setCode] = useState('');
@@ -27,7 +31,7 @@ export default function LobbyScreen({ onHost, onJoin, onBack, error }: LobbyScre
   };
 
   return (
-    <div className="lobby-screen">
+    <ScreenFrame className="lobby-screen" theme={theme} onToggleTheme={onToggleTheme}>
       <div className="lobby-content">
         <button className="lobby-back" onClick={onBack}>
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -36,7 +40,7 @@ export default function LobbyScreen({ onHost, onJoin, onBack, error }: LobbyScre
           Back
         </button>
 
-        <div className="lobby-icon">🎮</div>
+        <p className="lobby-kicker">Peer-to-peer article chase</p>
         <h1 className="lobby-title">Multiplayer</h1>
 
         <div className="lobby-name-input">
@@ -121,6 +125,6 @@ export default function LobbyScreen({ onHost, onJoin, onBack, error }: LobbyScre
           </div>
         )}
       </div>
-    </div>
+    </ScreenFrame>
   );
 }

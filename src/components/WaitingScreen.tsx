@@ -1,3 +1,6 @@
+import ScreenFrame from './ScreenFrame';
+import type { ThemeMode } from './ThemeToggle';
+
 interface WaitingScreenProps {
   mode: 'host' | 'joiner';
   lobbyCode?: string;
@@ -5,6 +8,8 @@ interface WaitingScreenProps {
   opponentName?: string;
   status: string;
   onCancel: () => void;
+  theme: ThemeMode;
+  onToggleTheme: () => void;
 }
 
 export default function WaitingScreen({
@@ -14,13 +19,15 @@ export default function WaitingScreen({
   opponentName,
   status,
   onCancel,
+  theme,
+  onToggleTheme,
 }: WaitingScreenProps) {
   return (
-    <div className="lobby-screen">
+    <ScreenFrame className="lobby-screen" theme={theme} onToggleTheme={onToggleTheme}>
       <div className="lobby-content waiting-content">
         {mode === 'host' ? (
           <>
-            <div className="waiting-icon">🏠</div>
+            <p className="lobby-kicker">Room opened</p>
             <h2 className="waiting-title">Your Room</h2>
             <div className="lobby-code-display">
               <span className="lobby-code-label">Share this code:</span>
@@ -42,7 +49,7 @@ export default function WaitingScreen({
           </>
         ) : (
           <>
-            <div className="waiting-icon">🔗</div>
+            <p className="lobby-kicker">Finding the archive desk</p>
             <h2 className="waiting-title">Joining Room</h2>
             <div className="waiting-spinner-section">
               <div className="loading-spinner" />
@@ -58,6 +65,6 @@ export default function WaitingScreen({
           Cancel
         </button>
       </div>
-    </div>
+    </ScreenFrame>
   );
 }

@@ -1,16 +1,20 @@
 import { useState } from 'react';
 import { getLeaderboard, formatLeaderboardTime } from '../lib/leaderboard';
 import type { LeaderboardEntry } from '../lib/leaderboard';
+import ScreenFrame from './ScreenFrame';
+import type { ThemeMode } from './ThemeToggle';
 
 interface LeaderboardProps {
   onBack: () => void;
+  theme: ThemeMode;
+  onToggleTheme: () => void;
 }
 
-export default function Leaderboard({ onBack }: LeaderboardProps) {
+export default function Leaderboard({ onBack, theme, onToggleTheme }: LeaderboardProps) {
   const [entries] = useState(() => getLeaderboard());
 
   return (
-    <div className="lobby-screen">
+    <ScreenFrame className="lobby-screen" theme={theme} onToggleTheme={onToggleTheme}>
       <div className="lobby-content">
         <button className="lobby-back" onClick={onBack}>
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -19,7 +23,7 @@ export default function Leaderboard({ onBack }: LeaderboardProps) {
           Back
         </button>
 
-        <div className="leaderboard-icon">🏆</div>
+        <p className="lobby-kicker">Recorded races</p>
         <h1 className="lobby-title">Leaderboard</h1>
 
         {entries.length === 0 ? (
@@ -64,6 +68,6 @@ export default function Leaderboard({ onBack }: LeaderboardProps) {
           </div>
         )}
       </div>
-    </div>
+    </ScreenFrame>
   );
 }
